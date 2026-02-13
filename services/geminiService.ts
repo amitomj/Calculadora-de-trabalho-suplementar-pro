@@ -1,21 +1,26 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { MonthData, DetectedTable } from "../types";
 
-// Fase 1: Detetar tabelas no documento
 export async function detectTablesInFile(base64Data: string, mimeType: string, fileName: string): Promise<Partial<DetectedTable>[]> {
-  /* Fix: Create instance right before API call to ensure latest key usage */
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  /* Fix: Use gemini-3-pro-preview for complex vision and structure analysis tasks */
   const model = 'gemini-3-pro-preview';
   
   const prompt = `
-    Analise este documento (${fileName}).
-    Identifique todas as tabelas de registo de horas ou calendários de trabalho presentes.
-    Para cada tabela encontrada, forneça:
-    1. Uma breve descrição (ex: "Tabela de Janeiro", "Registo de Horas Extras").
-    2. Se for uma imagem ou PDF visual, as coordenadas da caixa delimitadora [ymin, xmin, ymax, xmax] em valores de 0 a 1000.
-    
-    Retorne um JSON com uma lista de objetos 'tables'.
+    INSTRUÇÕES CRÍTICAS PARA ANÁLISE DE DOCUMENTO JURÍDICO/LABORAL:
+    Documento: ${fileName}
+
+    1. EXECUTE UM SCAN COMPLETO: Este documento pode ter muitas páginas. Analise TODAS as páginas do início ao fim.
+    2. FILTRAGEM SELETIVA: Ignore índices, tabelas de honorários, tabelas de artigos de lei ou cronogramas processuais.
+    3. FOCO EXCLUSIVO: Identifique APENAS tabelas que contenham registos de:
+       - Horas de trabalho diárias.
+       - Trabalho suplementar / Horas extraordinárias.
+       - Escalas de serviço.
+       - Picagens de ponto.
+    4. LOCALIZAÇÃO: Para cada tabela, identifique o número da página e a descrição do contexto (ex: "Tabela de horas extras em factos provados", "Mapa de assiduidade Jan/2022").
+    5. COORDENADAS: Se possível, indique a boundingBox [ymin, xmin, ymax, xmax] (0-1000).
+
+    Não omita tabelas que apareçam no final do documento ou em secções de "factos não provados" se estas contiverem dados numéricos de horas.
   `;
 
   try {
@@ -29,6 +34,7 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
       },
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 4000 },
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -38,13 +44,14 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
                 type: Type.OBJECT,
                 properties: {
                   description: { type: Type.STRING },
+                  pageNumber: { type: Type.INTEGER },
                   boundingBox: { 
                     type: Type.ARRAY, 
                     items: { type: Type.NUMBER },
                     description: "[ymin, xmin, ymax, xmax]"
                   }
                 },
-                required: ['description']
+                required: ['description', 'pageNumber']
               }
             }
           }
@@ -58,32 +65,30 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
       fileName,
       description: t.description,
       boundingBox: t.boundingBox,
+      pageNumber: t.pageNumber,
       previewUrl: base64Data,
       mimeType: mimeType
     }));
   } catch (error: any) {
     console.error("Erro na deteção de tabelas:", error);
-    /* Fix: Handle 'Requested entity was not found' by prompting user for key selection as per guidelines */
     if (error.message?.includes("Requested entity was not found")) {
-      if (window.aistudio) {
-        window.aistudio.openSelectKey();
-      } else {
-        window.location.reload();
-      }
+      if (window.aistudio) window.aistudio.openSelectKey();
+      else window.location.reload();
     }
     return [];
   }
 }
 
-// Fase 2: Extrair dados de uma tabela específica (crop)
 export async function extractDataFromCrop(table: DetectedTable): Promise<MonthData | null> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-pro-preview';
   
   const prompt = `
-    Extraia os dados da tabela descrita como "${table.description}" neste documento.
-    Precisamos do Ano, Mês e uma lista de dias com horas trabalhadas e o tipo de trabalho.
-    Tipos válidos: 'Normal', 'Suplementar', 'Noturno', 'Descanso Obrigatório', 'Descanso Complementar', 'Feriado'.
+    Analise a tabela na página ${table.pageNumber} descrita como "${table.description}".
+    Extraia rigorosamente os dias do mês e as horas trabalhadas.
+    Se a tabela for de "Trabalho Suplementar", classifique automaticamente os dias como 'Suplementar'.
+    
+    Retorne o Ano, Mês e a lista de dias.
   `;
 
   try {
@@ -97,6 +102,7 @@ export async function extractDataFromCrop(table: DetectedTable): Promise<MonthDa
       },
       config: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 2000 },
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -124,6 +130,7 @@ export async function extractDataFromCrop(table: DetectedTable): Promise<MonthDa
       id: crypto.randomUUID(),
       year: result.year || new Date().getFullYear(),
       month: result.month || new Date().getMonth() + 1,
+      pageNumber: table.pageNumber,
       days: result.days.map((d: any) => ({
         ...d,
         id: crypto.randomUUID()
@@ -131,13 +138,6 @@ export async function extractDataFromCrop(table: DetectedTable): Promise<MonthDa
     };
   } catch (error: any) {
     console.error("Erro na extração final:", error);
-    if (error.message?.includes("Requested entity was not found")) {
-      if (window.aistudio) {
-        window.aistudio.openSelectKey();
-      } else {
-        window.location.reload();
-      }
-    }
     return null;
   }
 }

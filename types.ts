@@ -20,7 +20,8 @@ export interface MonthData {
   year: number;
   month: number;
   days: WorkDay[];
-  sourceCropId?: string; // Link to the original crop for verification
+  sourceCropId?: string;
+  pageNumber?: number;
 }
 
 export interface PercentageConfig {
@@ -41,8 +42,9 @@ export interface DetectedTable {
   fileName: string;
   previewUrl: string;
   mimeType: string;
-  boundingBox?: [number, number, number, number]; // [ymin, xmin, ymax, xmax]
+  boundingBox?: [number, number, number, number];
   description: string;
+  pageNumber?: number;
   extractedData?: MonthData;
 }
 

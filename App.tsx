@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { MonthData, CalculationConfig, WorkType, ProjectState, DetectedTable } from './types';
 import { LoadingTab } from './components/LoadingTab';
@@ -18,9 +19,9 @@ declare global {
     openSelectKey: () => Promise<void>;
   }
 
-  /* Fix: Removed readonly and optional modifiers to match environment-provided Window interface and resolve modifier collision */
+  /* Fix: Restored readonly and optional modifiers to match environment-provided Window interface and resolve modifier collision */
   interface Window {
-    aistudio: AIStudio;
+    readonly aistudio?: AIStudio;
   }
 }
 
