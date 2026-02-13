@@ -1,0 +1,7 @@
+{
+  "name": "Calculadora de trabalho suplementar pro",
+  "description": "Uma ferramenta completa para carregar documentos de registo de horas, editar tabelas mensais e calcular valores devidos por trabalho suplementar, noturno, feriados e descansos.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
