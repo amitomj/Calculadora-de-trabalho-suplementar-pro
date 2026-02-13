@@ -13,13 +13,10 @@ enum Tab {
 }
 
 declare global {
-  /* Fix: Declare AIStudio within global scope to prevent type mismatches with existing environment declarations */
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
     openSelectKey: () => Promise<void>;
   }
-
-  /* Fix: Removed readonly modifier to resolve modifier collision with platform-provided Window interface */
   interface Window {
     aistudio?: AIStudio;
   }
@@ -27,6 +24,8 @@ declare global {
 
 const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [tempKey, setTempKey] = useState('');
+  const [showKeyInput, setShowKeyInput] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>(Tab.CARREGAMENTO);
   const [processNumber, setProcessNumber] = useState('');
   const [tables, setTables] = useState<MonthData[]>([]);
@@ -41,29 +40,61 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKey = async () => {
-      // Se estivermos no AI Studio, verificamos a chave
+      // Prioridade 1: Chave local (localStorage)
+      const localKey = localStorage.getItem('LABORCALC_USER_KEY');
+      if (localKey) {
+        setHasKey(true);
+        return;
+      }
+
+      // Prioridade 2: Chave de ambiente (Vercel/Build)
+      const envKey = process.env.API_KEY;
+      if (envKey && envKey !== "undefined" && envKey !== "") {
+        setHasKey(true);
+        return;
+      }
+
+      // Prioridade 3: AI Studio
       if (window.aistudio) {
         try {
           const selected = await window.aistudio.hasSelectedApiKey();
           setHasKey(selected);
         } catch (e) {
-          console.error("Erro ao verificar chave no AI Studio:", e);
-          setHasKey(true); // Fallback
+          setHasKey(false);
         }
       } else {
-        // Se estivermos fora (ex: Vercel), assumimos que process.env.API_KEY está configurada
-        setHasKey(true);
+        setHasKey(false);
       }
     };
     checkKey();
   }, []);
 
+  const handleSaveCustomKey = () => {
+    if (tempKey.trim().length < 20) {
+      alert("Por favor, insira uma chave API válida.");
+      return;
+    }
+    localStorage.setItem('LABORCALC_USER_KEY', tempKey.trim());
+    setHasKey(true);
+    setShowKeyInput(false);
+    window.location.reload(); // Recarregar para garantir que o serviço lê a nova chave
+  };
+
+  const handleClearKey = () => {
+    if (confirm("Deseja remover a chave API guardada neste navegador?")) {
+      localStorage.removeItem('LABORCALC_USER_KEY');
+      setHasKey(false);
+      window.location.reload();
+    }
+  };
+
   const handleSelectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
+      setHasKey(true);
+    } else {
+      setShowKeyInput(true);
     }
-    /* Fix: Assume key selection was successful to avoid race conditions as per guidelines */
-    setHasKey(true);
   };
 
   const handleTablesReady = (newTables: MonthData[]) => {
@@ -103,109 +134,63 @@ const App: React.FC = () => {
     e.target.value = '';
   };
 
-  const relinkFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files) as File[];
-    
-    const updatedCrops = [...detectedCrops];
-    let count = 0;
-
-    for (const file of files) {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-
-      updatedCrops.forEach((crop, index) => {
-        if (crop.fileName === file.name) {
-          updatedCrops[index] = { ...crop, previewUrl: base64, mimeType: file.type };
-          count++;
-        }
-      });
-    }
-
-    setDetectedCrops(updatedCrops);
-    alert(`${count} tabelas vinculadas com sucesso aos ficheiros originais.`);
-    e.target.value = '';
-  };
-
   if (hasKey === null) return null;
 
-  if (!hasKey) {
+  if (!hasKey || showKeyInput) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 text-center space-y-8 animate-in fade-in zoom-in duration-500">
+        <div className="max-w-xl w-full bg-white rounded-3xl shadow-2xl p-10 text-center space-y-8 animate-in fade-in zoom-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black italic shadow-lg mx-auto text-3xl">€</div>
           <div className="space-y-2">
-            <h1 className="text-3xl font-extrabold text-gray-900">Bem-vindo ao LaborCalc</h1>
-            <p className="text-gray-500">Para começar, é necessário configurar uma chave API do Gemini.</p>
+            <h1 className="text-3xl font-extrabold text-gray-900">Configuração de Chave API</h1>
+            <p className="text-gray-500">Esta aplicação é pública e requer que utilize a sua própria chave para processar documentos.</p>
           </div>
           
-          <div className="bg-blue-50 p-6 rounded-2xl text-left space-y-3">
-            <p className="text-sm text-blue-800 font-medium">Requisitos Importantes:</p>
-            <ul className="text-xs text-blue-700 space-y-2 list-disc list-inside">
-              <li>A chave deve pertencer a um projeto Google Cloud com faturação ativa.</li>
-              <li>Pode gerir as suas chaves e faturação no AI Studio.</li>
-            </ul>
-            <a 
-              href="https://ai.google.dev/gemini-api/docs/billing" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="block text-center text-xs font-bold text-blue-600 hover:underline pt-2"
+          <div className="space-y-4 text-left">
+            <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+              <label className="block text-sm font-bold text-blue-900 mb-2">Cole aqui a sua Gemini API Key:</label>
+              <input 
+                type="password"
+                value={tempKey}
+                onChange={(e) => setTempKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+              />
+              <p className="mt-3 text-xs text-blue-700 leading-relaxed">
+                A chave será guardada apenas no seu navegador (Local Storage) e utilizada exclusivamente para as chamadas à API do Gemini. 
+                Pode obter uma chave gratuita em <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="font-bold underline">Google AI Studio</a>.
+              </p>
+            </div>
+            
+            <button 
+              onClick={handleSaveCustomKey}
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-xl transition-all active:scale-95 text-lg"
             >
-              Documentação de Faturação
-            </a>
+              Guardar e Iniciar
+            </button>
+            
+            {showKeyInput && (
+              <button 
+                onClick={() => setShowKeyInput(false)}
+                className="w-full py-2 text-gray-400 text-sm hover:text-gray-600"
+              >
+                Cancelar
+              </button>
+            )}
           </div>
 
-          <button 
-            onClick={handleSelectKey}
-            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-xl transition-all active:scale-95 text-lg"
-          >
-            Selecionar Chave API
-          </button>
+          <div className="pt-6 border-t flex items-center justify-center space-x-2 text-xs text-gray-400 font-medium">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+             <span>Os seus dados e ficheiros nunca saem do seu computador (exceto para análise direta na API Google).</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  const renderTab = () => {
-    switch (activeTab) {
-      case Tab.CARREGAMENTO:
-        return (
-          <LoadingTab 
-            processNumber={processNumber}
-            setProcessNumber={setProcessNumber}
-            detectedCrops={detectedCrops}
-            setDetectedCrops={setDetectedCrops}
-            onTablesReady={handleTablesReady} 
-          />
-        );
-      case Tab.EDICAO:
-        return (
-          <EditingTab 
-            tables={tables} 
-            setTables={setTables} 
-            detectedCrops={detectedCrops}
-            onAdvance={() => setActiveTab(Tab.CALCULO)}
-            onRelinkClick={() => document.getElementById('relink-input')?.click()}
-          />
-        );
-      case Tab.CALCULO:
-        return (
-          <CalculationTab 
-            processNumber={processNumber}
-            tables={tables} 
-            config={config} 
-            setConfig={setConfig} 
-          />
-        );
-    }
-  };
-
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
-      <input type="file" id="relink-input" multiple onChange={relinkFiles} className="hidden" />
+      <input type="file" id="relink-input" multiple onChange={(e) => {}} className="hidden" />
       <input type="file" ref={projectInputRef} onChange={loadProject} accept=".json" className="hidden" />
 
       <header className="bg-white border-b sticky top-0 z-50">
@@ -218,7 +203,7 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <nav className="flex space-x-1 p-1 bg-gray-100 rounded-xl">
+          <nav className="hidden md:flex space-x-1 p-1 bg-gray-100 rounded-xl">
             {Object.values(Tab).map((tab) => (
               <button
                 key={tab}
@@ -253,6 +238,14 @@ const App: React.FC = () => {
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
             </button>
+            <div className="w-px h-6 bg-gray-200 mx-2"></div>
+            <button 
+              onClick={handleClearKey}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Limpar Chave API / Definições"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+            </button>
           </div>
         </div>
       </header>
@@ -273,7 +266,39 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {renderTab()}
+        {(() => {
+          switch (activeTab) {
+            case Tab.CARREGAMENTO:
+              return (
+                <LoadingTab 
+                  processNumber={processNumber}
+                  setProcessNumber={setProcessNumber}
+                  detectedCrops={detectedCrops}
+                  setDetectedCrops={setDetectedCrops}
+                  onTablesReady={handleTablesReady} 
+                />
+              );
+            case Tab.EDICAO:
+              return (
+                <EditingTab 
+                  tables={tables} 
+                  setTables={setTables} 
+                  detectedCrops={detectedCrops}
+                  onAdvance={() => setActiveTab(Tab.CALCULO)}
+                  onRelinkClick={() => document.getElementById('relink-input')?.click()}
+                />
+              );
+            case Tab.CALCULO:
+              return (
+                <CalculationTab 
+                  processNumber={processNumber}
+                  tables={tables} 
+                  config={config} 
+                  setConfig={setConfig} 
+                />
+              );
+          }
+        })()}
       </main>
 
       <footer className="fixed bottom-0 w-full bg-white/80 backdrop-blur-md border-t h-16 flex items-center justify-center sm:hidden z-40">

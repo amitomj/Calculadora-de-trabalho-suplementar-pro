@@ -19,35 +19,44 @@ export const LoadingTab: React.FC<Props> = ({
   onTablesReady 
 }) => {
   const [status, setStatus] = useState<'idle' | 'detecting' | 'extracting'>('idle');
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     
+    setError(null);
     setStatus('detecting');
     const selectedFiles = Array.from(e.target.files) as File[];
 
-    for (const file of selectedFiles) {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+    try {
+      for (const file of selectedFiles) {
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      const tables = await detectTablesInFile(base64, file.type, file.name);
-      
-      const newCrops = tables.map(t => ({
-        ...t,
-        id: t.id!,
-        fileName: t.fileName!,
-        previewUrl: t.previewUrl!,
-        mimeType: t.mimeType!,
-        description: t.description!,
-        pageNumber: t.pageNumber
-      })) as DetectedTable[];
+        const tables = await detectTablesInFile(base64, file.type, file.name);
+        
+        const newCrops = tables.map(t => ({
+          ...t,
+          id: t.id!,
+          fileName: t.fileName!,
+          previewUrl: t.previewUrl!,
+          mimeType: t.mimeType!,
+          description: t.description!,
+          pageNumber: t.pageNumber
+        })) as DetectedTable[];
 
-      setDetectedCrops(prev => [...prev, ...newCrops]);
+        setDetectedCrops(prev => [...prev, ...newCrops]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Ocorreu um erro ao processar os ficheiros.");
+    } finally {
+      setStatus('idle');
     }
-    setStatus('idle');
   };
 
   const removeCrop = (id: string) => {
@@ -57,28 +66,42 @@ export const LoadingTab: React.FC<Props> = ({
   const handleAdvance = async () => {
     if (detectedCrops.length === 0) return;
     
+    setError(null);
     setStatus('extracting');
     const finalData: MonthData[] = [];
 
-    // Sort by page number for logical extraction
-    const sortedCrops = [...detectedCrops].sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
+    try {
+      const sortedCrops = [...detectedCrops].sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
 
-    for (const crop of sortedCrops) {
-      const data = await extractDataFromCrop(crop);
-      if (data) {
-        finalData.push({
-          ...data,
-          sourceCropId: crop.id
-        });
+      for (const crop of sortedCrops) {
+        const data = await extractDataFromCrop(crop);
+        if (data) {
+          finalData.push({
+            ...data,
+            sourceCropId: crop.id
+          });
+        }
       }
-    }
 
-    onTablesReady(finalData);
-    setStatus('idle');
+      onTablesReady(finalData);
+    } catch (err: any) {
+      setError("Erro na extração de dados das tabelas.");
+    } finally {
+      setStatus('idle');
+    }
   };
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl animate-in slide-in-from-top duration-300">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <p className="text-sm text-red-700 font-medium">{error}</p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
         <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
           Número do Processo
@@ -114,10 +137,11 @@ export const LoadingTab: React.FC<Props> = ({
           className="hidden" 
           id="file-upload" 
           accept="image/*,application/pdf"
+          disabled={status !== 'idle'}
         />
         <label 
           htmlFor="file-upload" 
-          className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold cursor-pointer hover:bg-blue-700 transition-all shadow-lg active:scale-95"
+          className={`px-8 py-3 bg-blue-600 text-white rounded-xl font-bold cursor-pointer hover:bg-blue-700 transition-all shadow-lg active:scale-95 ${status !== 'idle' ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {status === 'detecting' ? 'A detetar tabelas (scan profundo)...' : 'Selecionar Ficheiros'}
         </label>
