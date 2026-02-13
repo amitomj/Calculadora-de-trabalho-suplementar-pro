@@ -1,11 +1,12 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { MonthData, DetectedTable } from "../types";
 
 // Fase 1: Detetar tabelas no documento
 export async function detectTablesInFile(base64Data: string, mimeType: string, fileName: string): Promise<Partial<DetectedTable>[]> {
+  /* Fix: Create instance right before API call to ensure latest key usage */
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const model = 'gemini-3-flash-preview';
+  /* Fix: Use gemini-3-pro-preview for complex vision and structure analysis tasks */
+  const model = 'gemini-3-pro-preview';
   
   const prompt = `
     Analise este documento (${fileName}).
@@ -62,8 +63,13 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
     }));
   } catch (error: any) {
     console.error("Erro na deteção de tabelas:", error);
+    /* Fix: Handle 'Requested entity was not found' by prompting user for key selection as per guidelines */
     if (error.message?.includes("Requested entity was not found")) {
-      window.location.reload(); // Force re-selection if key is invalid
+      if (window.aistudio) {
+        window.aistudio.openSelectKey();
+      } else {
+        window.location.reload();
+      }
     }
     return [];
   }
@@ -72,7 +78,7 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
 // Fase 2: Extrair dados de uma tabela específica (crop)
 export async function extractDataFromCrop(table: DetectedTable): Promise<MonthData | null> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const model = 'gemini-3-flash-preview';
+  const model = 'gemini-3-pro-preview';
   
   const prompt = `
     Extraia os dados da tabela descrita como "${table.description}" neste documento.
@@ -126,7 +132,11 @@ export async function extractDataFromCrop(table: DetectedTable): Promise<MonthDa
   } catch (error: any) {
     console.error("Erro na extração final:", error);
     if (error.message?.includes("Requested entity was not found")) {
-      window.location.reload();
+      if (window.aistudio) {
+        window.aistudio.openSelectKey();
+      } else {
+        window.location.reload();
+      }
     }
     return null;
   }

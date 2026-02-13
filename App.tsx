@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { MonthData, CalculationConfig, WorkType, ProjectState, DetectedTable } from './types';
 import { LoadingTab } from './components/LoadingTab';
@@ -12,22 +11,16 @@ enum Tab {
   CALCULO = 'Cálculo'
 }
 
-/**
- * Define the AIStudio interface to match the environment's expected type.
- * This resolves the conflict where 'aistudio' property was expected to be of type 'AIStudio'.
- */
-interface AIStudio {
-  hasSelectedApiKey: () => Promise<boolean>;
-  openSelectKey: () => Promise<void>;
-}
-
 declare global {
+  /* Fix: Declare AIStudio within global scope to prevent type mismatches with existing environment declarations */
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
+  /* Fix: Removed readonly and optional modifiers to match environment-provided Window interface and resolve modifier collision */
   interface Window {
-    /**
-     * Use 'readonly' modifier to match identical modifiers requirement if the
-     * original declaration in the environment is also readonly.
-     */
-    readonly aistudio: AIStudio;
+    aistudio: AIStudio;
   }
 }
 
@@ -47,18 +40,28 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKey = async () => {
-      const selected = await window.aistudio.hasSelectedApiKey();
-      setHasKey(selected);
+      // Se estivermos no AI Studio, verificamos a chave
+      if (window.aistudio) {
+        try {
+          const selected = await window.aistudio.hasSelectedApiKey();
+          setHasKey(selected);
+        } catch (e) {
+          console.error("Erro ao verificar chave no AI Studio:", e);
+          setHasKey(true); // Fallback
+        }
+      } else {
+        // Se estivermos fora (ex: Vercel), assumimos que process.env.API_KEY está configurada
+        setHasKey(true);
+      }
     };
     checkKey();
   }, []);
 
   const handleSelectKey = async () => {
-    await window.aistudio.openSelectKey();
-    /**
-     * Race condition mitigation: assume the key selection was successful 
-     * after triggering openSelectKey() and proceed to the app.
-     */
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+    }
+    /* Fix: Assume key selection was successful to avoid race conditions as per guidelines */
     setHasKey(true);
   };
 
