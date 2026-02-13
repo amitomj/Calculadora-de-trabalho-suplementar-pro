@@ -2,7 +2,9 @@
 import React from 'react';
 import { CalculationConfig, MonthData, WorkType, PercentageConfig } from '../types';
 import { DEFAULT_PERCENTAGES, MONTHS } from '../constants';
-import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, BorderStyle, WidthType } from 'https://esm.sh/docx@9.1.0';
+import * as docx from 'https://esm.sh/docx@9.1.0';
+
+const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, WidthType } = docx;
 
 interface Props {
   processNumber: string;
@@ -70,50 +72,39 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
   const totalGlobalHours = Object.values(grandTotals).reduce((a, b) => a + b.h, 0);
 
   const downloadWord = async () => {
-    const sections = [];
+    const docChildren: any[] = [];
 
     // Header Info
-    sections.push(
+    docChildren.push(
       new Paragraph({
         children: [new TextRun({ text: `Relatório de Cálculo - Processo ${processNumber || 'N/A'}`, bold: true, size: 32 })],
         alignment: AlignmentType.CENTER,
         spacing: { after: 400 }
       }),
       new Paragraph({
-        children: [
-          new TextRun({ text: `DADOS BASE:`, bold: true, size: 24 }),
-        ],
+        children: [new TextRun({ text: `DADOS BASE:`, bold: true, size: 24 })],
         spacing: { after: 100 }
       }),
       new Paragraph({
-        children: [
-          new TextRun({ text: `Salário Base Mensal: `, bold: true }),
-          new TextRun({ text: `${config.salary.toFixed(2)}€` }),
-        ],
+        children: [new TextRun({ text: `Salário Base Mensal: `, bold: true }), new TextRun({ text: `${config.salary.toFixed(2)}€` })],
         indent: { left: 400 }
       }),
       new Paragraph({
-        children: [
-          new TextRun({ text: `Carga Horária Semanal: `, bold: true }),
-          new TextRun({ text: `${config.weeklyHours}h/semana` }),
-        ],
+        children: [new TextRun({ text: `Carga Horária Semanal: `, bold: true }), new TextRun({ text: `${config.weeklyHours}h/semana` })],
         indent: { left: 400 }
       }),
       new Paragraph({
-        children: [
-          new TextRun({ text: `Valor Hora (Calculado): `, bold: true }),
-          new TextRun({ text: `${hourlyRate.toFixed(2)}€/h` }),
-        ],
+        children: [new TextRun({ text: `Valor Hora (Calculado): `, bold: true }), new TextRun({ text: `${hourlyRate.toFixed(2)}€/h` })],
         indent: { left: 400 },
         spacing: { after: 200 }
       })
     );
 
     // Percentages Info
-    sections.push(new Paragraph({ text: "PERCENTAGENS APLICADAS:", bold: true, size: 24, spacing: { before: 200, after: 100 } }));
+    docChildren.push(new Paragraph({ text: "PERCENTAGENS APLICADAS:", bold: true, size: 24, spacing: { before: 200, after: 100 } }));
     Object.entries(config.percentages).forEach(([type, p]) => {
       const perc = p as PercentageConfig;
-      sections.push(new Paragraph({
+      docChildren.push(new Paragraph({
         children: [new TextRun({ text: `• ${type}: `, bold: true }), new TextRun({ text: `1ª hora +${perc.firstHour}%, restantes +${perc.subsequentHours}%` })],
         indent: { left: 400 }
       }));
@@ -124,7 +115,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
       const { totalHours, totalValue } = calculateTotalsByMonth(table);
       if (totalHours === 0) continue;
 
-      sections.push(new Paragraph({
+      docChildren.push(new Paragraph({
         children: [new TextRun({ text: `Detalhamento: ${MONTHS[table.month - 1]} ${table.year}`, bold: true, size: 28 })],
         spacing: { before: 400, after: 200 }
       }));
@@ -156,7 +147,6 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
         }));
       });
 
-      // Month Total Footer Row
       rows.push(new TableRow({
         children: [
           new TableCell({ children: [new Paragraph({ text: "TOTAL DO MÊS", bold: true })], shading: { fill: "e5e7eb" } }),
@@ -166,7 +156,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
         ]
       }));
 
-      sections.push(new Table({
+      docChildren.push(new Table({
         rows: rows,
         width: { size: 100, type: WidthType.PERCENTAGE },
         spacing: { after: 300 }
@@ -174,7 +164,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
     }
 
     // Final Summary
-    sections.push(
+    docChildren.push(
       new Paragraph({
         children: [new TextRun({ text: `RESUMO GLOBAL`, bold: true, size: 32 })],
         spacing: { before: 600, after: 200 },
@@ -204,7 +194,6 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
       }
     });
 
-    // Grand Total Row
     summaryRows.push(new TableRow({
       children: [
         new TableCell({ children: [new Paragraph({ text: "VALOR GLOBAL DEVIDO", bold: true })], shading: { fill: "dbeafe" } }),
@@ -213,13 +202,13 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
       ]
     }));
 
-    sections.push(new Table({
+    docChildren.push(new Table({
       rows: summaryRows,
       width: { size: 100, type: WidthType.PERCENTAGE }
     }));
 
     const doc = new Document({
-      sections: [{ children: sections }]
+      sections: [{ children: docChildren }]
     });
 
     const blob = await Packer.toBlob(doc);
@@ -228,6 +217,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
     link.href = url;
     link.download = `${processNumber ? processNumber.replace(/[/\\?%*:|"<>]/g, '_') : 'projeto'}_calculo.docx`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   const updatePerc = (type: Exclude<WorkType, WorkType.NORMAL>, field: 'firstHour' | 'subsequentHours', val: number) => {

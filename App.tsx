@@ -23,7 +23,7 @@ const App: React.FC = () => {
     percentages: DEFAULT_PERCENTAGES
   });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
 
   const handleTablesReady = (newTables: MonthData[]) => {
     setTables(newTables);
@@ -31,6 +31,7 @@ const App: React.FC = () => {
   };
 
   const saveProject = () => {
+    // Para manter o JSON pequeno, podemos optar por guardar o estado estrutural
     const state: ProjectState = { processNumber, tables, config, detectedCrops };
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -59,6 +60,36 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
+    // Limpar input para permitir carregar o mesmo ficheiro novamente se necessário
+    e.target.value = '';
+  };
+
+  const relinkFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    // Fix: Cast the result of Array.from to File[] to avoid 'unknown' type issues with properties like name and type
+    const files = Array.from(e.target.files) as File[];
+    
+    const updatedCrops = [...detectedCrops];
+    let count = 0;
+
+    for (const file of files) {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+
+      updatedCrops.forEach((crop, index) => {
+        if (crop.fileName === file.name) {
+          updatedCrops[index] = { ...crop, previewUrl: base64, mimeType: file.type };
+          count++;
+        }
+      });
+    }
+
+    setDetectedCrops(updatedCrops);
+    alert(`${count} tabelas vinculadas com sucesso aos ficheiros originais.`);
+    e.target.value = '';
   };
 
   const renderTab = () => {
@@ -79,7 +110,8 @@ const App: React.FC = () => {
             tables={tables} 
             setTables={setTables} 
             detectedCrops={detectedCrops}
-            onAdvance={() => setActiveTab(Tab.CALCULO)} 
+            onAdvance={() => setActiveTab(Tab.CALCULO)}
+            onRelinkClick={() => document.getElementById('relink-input')?.click()}
           />
         );
       case Tab.CALCULO:
@@ -96,6 +128,10 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
+      {/* Inputs Ocultos */}
+      <input type="file" id="relink-input" multiple onChange={relinkFiles} className="hidden" />
+      <input type="file" ref={projectInputRef} onChange={loadProject} accept=".json" className="hidden" />
+
       <header className="bg-white border-b sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -128,9 +164,9 @@ const App: React.FC = () => {
 
           <div className="flex items-center space-x-2">
             <button 
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => projectInputRef.current?.click()}
               className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Abrir Projeto"
+              title="Abrir Projeto (.json)"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1m-6 9a2 2 0 01-2-2V5" /></svg>
             </button>
@@ -141,7 +177,6 @@ const App: React.FC = () => {
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
             </button>
-            <input type="file" ref={fileInputRef} onChange={loadProject} accept=".json" className="hidden" />
           </div>
         </div>
       </header>
