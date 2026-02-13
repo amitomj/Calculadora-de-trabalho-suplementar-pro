@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MonthData, WorkType, DetectedTable } from '../types';
 import { MONTHS } from '../constants';
 
@@ -12,6 +12,34 @@ interface Props {
 
 export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, onAdvance }) => {
   const [selectedCrop, setSelectedCrop] = useState<DetectedTable | null>(null);
+  const [modalUrl, setModalUrl] = useState<string | null>(null);
+
+  // Helper to convert Data URL to Blob URL for better browser compatibility in the modal
+  useEffect(() => {
+    if (selectedCrop) {
+      try {
+        const [header, base64] = selectedCrop.previewUrl.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] || selectedCrop.mimeType;
+        const binary = atob(base64);
+        const array = [];
+        for (let i = 0; i < binary.length; i++) {
+          array.push(binary.charCodeAt(i));
+        }
+        const blob = new Blob([new Uint8Array(array)], { type: mime });
+        const url = URL.createObjectURL(blob);
+        setModalUrl(url);
+        
+        return () => {
+          if (url) URL.revokeObjectURL(url);
+        };
+      } catch (e) {
+        console.error("Error creating modal URL:", e);
+        setModalUrl(selectedCrop.previewUrl); // Fallback to data URL
+      }
+    } else {
+      setModalUrl(null);
+    }
+  }, [selectedCrop]);
 
   const updateDay = (tableId: string, dayId: string, field: 'day' | 'hours' | 'type', value: any) => {
     setTables(prev => prev.map(t => {
@@ -95,7 +123,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
 
               <button 
                 onClick={() => openOriginal(table.sourceCropId)}
-                className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors flex items-center space-x-1"
+                className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors flex items-center space-x-1 shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                 <span>Ver Original</span>
@@ -162,28 +190,46 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
       {/* Verification Modal */}
       {selectedCrop && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center bg-white">
+          <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-4 border-b flex justify-between items-center bg-white z-10">
               <div className="flex flex-col">
                 <h4 className="font-bold text-gray-800">Visualização do Original</h4>
-                <p className="text-xs text-gray-500">{selectedCrop.description} ({selectedCrop.fileName})</p>
+                <p className="text-xs text-gray-500 truncate max-w-md">{selectedCrop.description} ({selectedCrop.fileName})</p>
               </div>
               <button onClick={() => setSelectedCrop(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="flex-1 overflow-hidden bg-gray-100 flex items-center justify-center">
-              {selectedCrop.mimeType.includes('pdf') ? (
-                <iframe src={selectedCrop.previewUrl} className="w-full h-full border-none" title="Original PDF" />
-              ) : selectedCrop.mimeType.includes('image') ? (
-                <div className="w-full h-full overflow-auto p-4 flex items-start justify-center">
-                   <img src={selectedCrop.previewUrl} alt="Original Image" className="max-w-none shadow-lg cursor-zoom-in" />
-                </div>
+            <div className="flex-1 overflow-hidden bg-gray-50 flex items-center justify-center relative">
+              {modalUrl ? (
+                <>
+                  {selectedCrop.mimeType.includes('pdf') ? (
+                    <iframe 
+                      src={modalUrl} 
+                      className="w-full h-full border-none bg-white" 
+                      title="Original PDF" 
+                    />
+                  ) : selectedCrop.mimeType.includes('image') ? (
+                    <div className="w-full h-full overflow-auto p-4 flex items-start justify-center bg-gray-200">
+                       <img 
+                        src={modalUrl} 
+                        alt="Original Image" 
+                        className="max-w-none shadow-lg cursor-zoom-in bg-white" 
+                        style={{ minWidth: '100%' }}
+                       />
+                    </div>
+                  ) : (
+                    <div className="text-center p-10 bg-white rounded-2xl shadow-sm border">
+                      <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      <p className="text-gray-600 font-medium">Visualização direta não disponível para este formato.</p>
+                      <p className="text-sm text-gray-400 mt-2">Tente descarregar o ficheiro original no seu dispositivo.</p>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="text-center p-10">
-                  <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <p className="text-gray-600 font-medium">Visualização direta não disponível para Word.</p>
-                  <p className="text-sm text-gray-400 mt-2">Pode consultar o ficheiro original no seu dispositivo.</p>
+                <div className="animate-pulse flex flex-col items-center">
+                  <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                  <p className="text-gray-400 font-medium">A carregar original...</p>
                 </div>
               )}
             </div>
@@ -194,7 +240,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
       <div className="flex justify-end pt-4">
         <button 
           onClick={onAdvance}
-          className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-md transition-all"
+          className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95"
         >
           Confirmar e Avançar
         </button>
