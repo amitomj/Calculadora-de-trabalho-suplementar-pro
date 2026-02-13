@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MonthData, CalculationConfig, WorkType, ProjectState, DetectedTable } from './types';
 import { LoadingTab } from './components/LoadingTab';
 import { EditingTab } from './components/EditingTab';
@@ -12,7 +12,27 @@ enum Tab {
   CALCULO = 'Cálculo'
 }
 
+/**
+ * Define the AIStudio interface to match the environment's expected type.
+ * This resolves the conflict where 'aistudio' property was expected to be of type 'AIStudio'.
+ */
+interface AIStudio {
+  hasSelectedApiKey: () => Promise<boolean>;
+  openSelectKey: () => Promise<void>;
+}
+
+declare global {
+  interface Window {
+    /**
+     * Use 'readonly' modifier to match identical modifiers requirement if the
+     * original declaration in the environment is also readonly.
+     */
+    readonly aistudio: AIStudio;
+  }
+}
+
 const App: React.FC = () => {
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>(Tab.CARREGAMENTO);
   const [processNumber, setProcessNumber] = useState('');
   const [tables, setTables] = useState<MonthData[]>([]);
@@ -25,13 +45,29 @@ const App: React.FC = () => {
 
   const projectInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const checkKey = async () => {
+      const selected = await window.aistudio.hasSelectedApiKey();
+      setHasKey(selected);
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    await window.aistudio.openSelectKey();
+    /**
+     * Race condition mitigation: assume the key selection was successful 
+     * after triggering openSelectKey() and proceed to the app.
+     */
+    setHasKey(true);
+  };
+
   const handleTablesReady = (newTables: MonthData[]) => {
     setTables(newTables);
     setActiveTab(Tab.EDICAO);
   };
 
   const saveProject = () => {
-    // Para manter o JSON pequeno, podemos optar por guardar o estado estrutural
     const state: ProjectState = { processNumber, tables, config, detectedCrops };
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -60,13 +96,11 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
-    // Limpar input para permitir carregar o mesmo ficheiro novamente se necessário
     e.target.value = '';
   };
 
   const relinkFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    // Fix: Cast the result of Array.from to File[] to avoid 'unknown' type issues with properties like name and type
     const files = Array.from(e.target.files) as File[];
     
     const updatedCrops = [...detectedCrops];
@@ -91,6 +125,45 @@ const App: React.FC = () => {
     alert(`${count} tabelas vinculadas com sucesso aos ficheiros originais.`);
     e.target.value = '';
   };
+
+  if (hasKey === null) return null;
+
+  if (!hasKey) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 text-center space-y-8 animate-in fade-in zoom-in duration-500">
+          <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black italic shadow-lg mx-auto text-3xl">€</div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-extrabold text-gray-900">Bem-vindo ao LaborCalc</h1>
+            <p className="text-gray-500">Para começar, é necessário configurar uma chave API do Gemini.</p>
+          </div>
+          
+          <div className="bg-blue-50 p-6 rounded-2xl text-left space-y-3">
+            <p className="text-sm text-blue-800 font-medium">Requisitos Importantes:</p>
+            <ul className="text-xs text-blue-700 space-y-2 list-disc list-inside">
+              <li>A chave deve pertencer a um projeto Google Cloud com faturação ativa.</li>
+              <li>Pode gerir as suas chaves e faturação no AI Studio.</li>
+            </ul>
+            <a 
+              href="https://ai.google.dev/gemini-api/docs/billing" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block text-center text-xs font-bold text-blue-600 hover:underline pt-2"
+            >
+              Documentação de Faturação
+            </a>
+          </div>
+
+          <button 
+            onClick={handleSelectKey}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-xl transition-all active:scale-95 text-lg"
+          >
+            Selecionar Chave API
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const renderTab = () => {
     switch (activeTab) {
@@ -128,7 +201,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
-      {/* Inputs Ocultos */}
       <input type="file" id="relink-input" multiple onChange={relinkFiles} className="hidden" />
       <input type="file" ref={projectInputRef} onChange={loadProject} accept=".json" className="hidden" />
 

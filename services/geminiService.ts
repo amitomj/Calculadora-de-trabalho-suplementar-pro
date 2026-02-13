@@ -2,10 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { MonthData, DetectedTable } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 // Fase 1: Detetar tabelas no documento
 export async function detectTablesInFile(base64Data: string, mimeType: string, fileName: string): Promise<Partial<DetectedTable>[]> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
   
   const prompt = `
@@ -61,14 +60,18 @@ export async function detectTablesInFile(base64Data: string, mimeType: string, f
       previewUrl: base64Data,
       mimeType: mimeType
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro na deteção de tabelas:", error);
+    if (error.message?.includes("Requested entity was not found")) {
+      window.location.reload(); // Force re-selection if key is invalid
+    }
     return [];
   }
 }
 
 // Fase 2: Extrair dados de uma tabela específica (crop)
 export async function extractDataFromCrop(table: DetectedTable): Promise<MonthData | null> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
   
   const prompt = `
@@ -120,8 +123,11 @@ export async function extractDataFromCrop(table: DetectedTable): Promise<MonthDa
         id: crypto.randomUUID()
       }))
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro na extração final:", error);
+    if (error.message?.includes("Requested entity was not found")) {
+      window.location.reload();
+    }
     return null;
   }
 }
