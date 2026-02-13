@@ -15,7 +15,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
   const [selectedCrop, setSelectedCrop] = useState<DetectedTable | null>(null);
   const [modalUrl, setModalUrl] = useState<string | null>(null);
 
-  // Helper to convert Data URL to Blob URL for maximum stability (fixes the black box issue)
+  // Helper to convert Data URL to Blob URL for maximum stability
   useEffect(() => {
     if (selectedCrop && selectedCrop.previewUrl && selectedCrop.previewUrl.startsWith('data:')) {
       try {
@@ -30,7 +30,13 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
         }
         const blob = new Blob([new Uint8Array(array)], { type: mime });
         const url = URL.createObjectURL(blob);
-        setModalUrl(url);
+        
+        // Se for PDF, adicionamos o parâmetro de página ao URL do Blob
+        const finalUrl = mime.includes('pdf') && selectedCrop.pageNumber 
+          ? `${url}#page=${selectedCrop.pageNumber}` 
+          : url;
+          
+        setModalUrl(finalUrl);
         
         return () => {
           if (url) URL.revokeObjectURL(url);
@@ -40,7 +46,11 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
         setModalUrl(selectedCrop.previewUrl);
       }
     } else if (selectedCrop?.previewUrl) {
-      setModalUrl(selectedCrop.previewUrl);
+      const isPdf = selectedCrop.mimeType.includes('pdf');
+      const finalUrl = isPdf && selectedCrop.pageNumber 
+        ? `${selectedCrop.previewUrl}#page=${selectedCrop.pageNumber}`
+        : selectedCrop.previewUrl;
+      setModalUrl(finalUrl);
     } else {
       setModalUrl(null);
     }
@@ -88,7 +98,6 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
     if (crop) setSelectedCrop(crop);
   };
 
-  // Verificar se há documentos que precisam de ser vinculados
   const needsRelink = detectedCrops.some(c => !c.previewUrl || c.previewUrl.length < 100);
 
   return (
@@ -117,21 +126,28 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
         <div key={table.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
             <div className="flex items-center space-x-2">
-              <select 
-                value={table.month} 
-                onChange={(e) => updateTableInfo(table.id, 'month', parseInt(e.target.value))}
-                className="font-bold text-gray-800 bg-transparent border-none focus:ring-0 cursor-pointer"
-              >
-                {MONTHS.map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
-              </select>
-              <input 
-                type="number" 
-                value={table.year}
-                onChange={(e) => updateTableInfo(table.id, 'year', parseInt(e.target.value))}
-                className="w-20 font-bold text-gray-800 bg-transparent border-none focus:ring-0"
-              />
+              <div className="flex flex-col">
+                <div className="flex items-center space-x-2">
+                  <select 
+                    value={table.month} 
+                    onChange={(e) => updateTableInfo(table.id, 'month', parseInt(e.target.value))}
+                    className="font-bold text-gray-800 bg-transparent border-none focus:ring-0 cursor-pointer"
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={m} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                  <input 
+                    type="number" 
+                    value={table.year}
+                    onChange={(e) => updateTableInfo(table.id, 'year', parseInt(e.target.value))}
+                    className="w-20 font-bold text-gray-800 bg-transparent border-none focus:ring-0"
+                  />
+                </div>
+                {table.pageNumber && (
+                  <span className="text-[10px] text-blue-600 font-bold px-3 uppercase tracking-wider">Origem: Página {table.pageNumber}</span>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -154,7 +170,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
                 className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors flex items-center space-x-1 shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                <span>Ver Original</span>
+                <span>Ver Original (Pág. {table.pageNumber})</span>
               </button>
             </div>
           </div>
@@ -223,7 +239,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
               <div className="flex flex-col">
                 <h4 className="font-bold text-gray-800">Visualização do Original</h4>
                 <p className="text-xs text-gray-500 truncate max-w-md">
-                  {selectedCrop.description} ({selectedCrop.fileName})
+                  {selectedCrop.description} ({selectedCrop.fileName}) - PÁGINA {selectedCrop.pageNumber}
                 </p>
               </div>
               <button onClick={() => setSelectedCrop(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
@@ -235,7 +251,7 @@ export const EditingTab: React.FC<Props> = ({ tables, setTables, detectedCrops, 
                 <>
                   {selectedCrop.mimeType.includes('pdf') ? (
                     <iframe 
-                      src={`${modalUrl}#toolbar=0`} 
+                      src={modalUrl} 
                       className="w-full h-full border-none bg-white" 
                       title="Original PDF" 
                     />
