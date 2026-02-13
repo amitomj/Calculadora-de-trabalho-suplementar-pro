@@ -39,12 +39,12 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
   };
 
   const calculateGrandTotals = () => {
-    const totals = {
-      [WorkType.SUPLEMENTAR]: 0,
-      [WorkType.NOTURNO]: 0,
-      [WorkType.DESCANSO_OBRIGATORIO]: 0,
-      [WorkType.DESCANSO_COMPLEMENTAR]: 0,
-      [WorkType.FERIADO]: 0,
+    const totalsByType = {
+      [WorkType.SUPLEMENTAR]: { h: 0, v: 0 },
+      [WorkType.NOTURNO]: { h: 0, v: 0 },
+      [WorkType.DESCANSO_OBRIGATORIO]: { h: 0, v: 0 },
+      [WorkType.DESCANSO_COMPLEMENTAR]: { h: 0, v: 0 },
+      [WorkType.FERIADO]: { h: 0, v: 0 },
     };
 
     tables.forEach(table => {
@@ -56,15 +56,18 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
           const firstHourValue = hourlyRate * (1 + perc.firstHour / 100);
           const remainingHours = Math.max(0, day.hours - 1);
           const remainingValue = remainingHours * hourlyRate * (1 + perc.subsequentHours / 100);
-          totals[type] += (day.hours > 1 ? firstHourValue : day.hours * hourlyRate * (1 + perc.firstHour / 100)) + remainingValue;
+          
+          totalsByType[type].h += day.hours;
+          totalsByType[type].v += (day.hours > 1 ? firstHourValue : day.hours * hourlyRate * (1 + perc.firstHour / 100)) + remainingValue;
         }
       });
     });
-    return totals;
+    return totalsByType;
   };
 
   const grandTotals = calculateGrandTotals();
-  const totalDue = Object.values(grandTotals).reduce((a, b) => a + b, 0);
+  const totalGlobalValue = Object.values(grandTotals).reduce((a, b) => a + b.v, 0);
+  const totalGlobalHours = Object.values(grandTotals).reduce((a, b) => a + b.h, 0);
 
   const downloadWord = async () => {
     const sections = [];
@@ -78,35 +81,51 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
       }),
       new Paragraph({
         children: [
-          new TextRun({ text: `Salário Mensal: `, bold: true }),
-          new TextRun({ text: `${config.salary.toFixed(2)}€` }),
-          new TextRun({ text: `   |   Carga Horária: `, bold: true }),
-          new TextRun({ text: `${config.weeklyHours}h/semana` }),
-          new TextRun({ text: `   |   Valor Hora: `, bold: true }),
-          new TextRun({ text: `${hourlyRate.toFixed(2)}€/h` })
+          new TextRun({ text: `DADOS BASE:`, bold: true, size: 24 }),
         ],
+        spacing: { after: 100 }
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: `Salário Base Mensal: `, bold: true }),
+          new TextRun({ text: `${config.salary.toFixed(2)}€` }),
+        ],
+        indent: { left: 400 }
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: `Carga Horária Semanal: `, bold: true }),
+          new TextRun({ text: `${config.weeklyHours}h/semana` }),
+        ],
+        indent: { left: 400 }
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: `Valor Hora (Calculado): `, bold: true }),
+          new TextRun({ text: `${hourlyRate.toFixed(2)}€/h` }),
+        ],
+        indent: { left: 400 },
         spacing: { after: 200 }
       })
     );
 
     // Percentages Info
-    sections.push(new Paragraph({ text: "Percentagens Aplicadas:", bold: true, spacing: { before: 200, after: 100 } }));
-    // Fix: Explicitly cast the value to PercentageConfig as Object.entries often returns unknown or string|any values
+    sections.push(new Paragraph({ text: "PERCENTAGENS APLICADAS:", bold: true, size: 24, spacing: { before: 200, after: 100 } }));
     Object.entries(config.percentages).forEach(([type, p]) => {
       const perc = p as PercentageConfig;
       sections.push(new Paragraph({
-        children: [new TextRun({ text: `• ${type}: `, bold: true }), new TextRun({ text: `1ª hora ${perc.firstHour}%, restantes ${perc.subsequentHours}%` })],
-        indent: { left: 720 }
+        children: [new TextRun({ text: `• ${type}: `, bold: true }), new TextRun({ text: `1ª hora +${perc.firstHour}%, restantes +${perc.subsequentHours}%` })],
+        indent: { left: 400 }
       }));
     });
 
-    // Tables
+    // Tables per Month
     for (const table of tables) {
       const { totalHours, totalValue } = calculateTotalsByMonth(table);
       if (totalHours === 0) continue;
 
       sections.push(new Paragraph({
-        children: [new TextRun({ text: `${MONTHS[table.month - 1]} ${table.year}`, bold: true, size: 24 })],
+        children: [new TextRun({ text: `Detalhamento: ${MONTHS[table.month - 1]} ${table.year}`, bold: true, size: 28 })],
         spacing: { before: 400, after: 200 }
       }));
 
@@ -115,8 +134,8 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
           children: [
             new TableCell({ children: [new Paragraph({ text: "Dia", bold: true })], shading: { fill: "f3f4f6" } }),
             new TableCell({ children: [new Paragraph({ text: "Horas", bold: true })], shading: { fill: "f3f4f6" } }),
-            new TableCell({ children: [new Paragraph({ text: "Tipo", bold: true })], shading: { fill: "f3f4f6" } }),
-            new TableCell({ children: [new Paragraph({ text: "Valor Estimado", bold: true })], shading: { fill: "f3f4f6" } }),
+            new TableCell({ children: [new Paragraph({ text: "Tipo de Trabalho", bold: true })], shading: { fill: "f3f4f6" } }),
+            new TableCell({ children: [new Paragraph({ text: "Valor (€)", bold: true })], shading: { fill: "f3f4f6" } }),
           ]
         })
       ];
@@ -137,10 +156,10 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
         }));
       });
 
-      // Month Total Row
+      // Month Total Footer Row
       rows.push(new TableRow({
         children: [
-          new TableCell({ children: [new Paragraph({ text: "TOTAL MÊS", bold: true })], columnSpan: 1, shading: { fill: "e5e7eb" } }),
+          new TableCell({ children: [new Paragraph({ text: "TOTAL DO MÊS", bold: true })], shading: { fill: "e5e7eb" } }),
           new TableCell({ children: [new Paragraph({ text: totalHours.toString(), bold: true })], shading: { fill: "e5e7eb" } }),
           new TableCell({ children: [new Paragraph({ text: "" })], shading: { fill: "e5e7eb" } }),
           new TableCell({ children: [new Paragraph({ text: `${totalValue.toFixed(2)}€`, bold: true })], shading: { fill: "e5e7eb" } }),
@@ -149,18 +168,55 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
 
       sections.push(new Table({
         rows: rows,
-        width: { size: 100, type: WidthType.PERCENTAGE }
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        spacing: { after: 300 }
       }));
     }
 
-    // Final Total
+    // Final Summary
     sections.push(
       new Paragraph({
-        children: [new TextRun({ text: `VALOR GLOBAL DEVIDO: ${totalDue.toFixed(2)}€`, bold: true, size: 28, color: "1d4ed8" })],
-        alignment: AlignmentType.RIGHT,
-        spacing: { before: 600 }
+        children: [new TextRun({ text: `RESUMO GLOBAL`, bold: true, size: 32 })],
+        spacing: { before: 600, after: 200 },
+        alignment: AlignmentType.CENTER,
       })
     );
+
+    const summaryRows = [
+      new TableRow({
+        children: [
+          new TableCell({ children: [new Paragraph({ text: "Tipo de Trabalho", bold: true })], shading: { fill: "1d4ed8" } }),
+          new TableCell({ children: [new Paragraph({ text: "Horas Totais", bold: true })], shading: { fill: "1d4ed8" } }),
+          new TableCell({ children: [new Paragraph({ text: "Valor Acumulado", bold: true })], shading: { fill: "1d4ed8" } }),
+        ]
+      })
+    ];
+
+    Object.entries(grandTotals).forEach(([type, data]) => {
+      if (data.h > 0) {
+        summaryRows.push(new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph({ text: type })] }),
+            new TableCell({ children: [new Paragraph({ text: data.h.toString() })] }),
+            new TableCell({ children: [new Paragraph({ text: `${data.v.toFixed(2)}€` })] }),
+          ]
+        }));
+      }
+    });
+
+    // Grand Total Row
+    summaryRows.push(new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ text: "VALOR GLOBAL DEVIDO", bold: true })], shading: { fill: "dbeafe" } }),
+        new TableCell({ children: [new Paragraph({ text: totalGlobalHours.toString(), bold: true })], shading: { fill: "dbeafe" } }),
+        new TableCell({ children: [new Paragraph({ text: `${totalGlobalValue.toFixed(2)}€`, bold: true })], shading: { fill: "dbeafe" } }),
+      ]
+    }));
+
+    sections.push(new Table({
+      rows: summaryRows,
+      width: { size: 100, type: WidthType.PERCENTAGE }
+    }));
 
     const doc = new Document({
       sections: [{ children: sections }]
@@ -170,7 +226,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${processNumber ? processNumber.replace(/[/\\?%*:|"<>]/g, '_') : 'relatorio'}_calculo.docx`;
+    link.download = `${processNumber ? processNumber.replace(/[/\\?%*:|"<>]/g, '_') : 'projeto'}_calculo.docx`;
     link.click();
   };
 
@@ -198,7 +254,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
               <input 
                 type="number" 
                 value={config.salary}
-                onChange={(e) => setConfig(prev => ({ ...prev, salary: parseFloat(e.target.value) }))}
+                onChange={(e) => setConfig(prev => ({ ...prev, salary: parseFloat(e.target.value) || 0 }))}
                 className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -207,7 +263,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
               <input 
                 type="number" 
                 value={config.weeklyHours}
-                onChange={(e) => setConfig(prev => ({ ...prev, weeklyHours: parseFloat(e.target.value) }))}
+                onChange={(e) => setConfig(prev => ({ ...prev, weeklyHours: parseFloat(e.target.value) || 0 }))}
                 className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -232,7 +288,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
                       <input 
                         type="number" 
                         value={config.percentages[type].firstHour}
-                        onChange={(e) => updatePerc(type, 'firstHour', parseFloat(e.target.value))}
+                        onChange={(e) => updatePerc(type, 'firstHour', parseFloat(e.target.value) || 0)}
                         className="w-full border rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
@@ -241,7 +297,7 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
                       <input 
                         type="number" 
                         value={config.percentages[type].subsequentHours}
-                        onChange={(e) => updatePerc(type, 'subsequentHours', parseFloat(e.target.value))}
+                        onChange={(e) => updatePerc(type, 'subsequentHours', parseFloat(e.target.value) || 0)}
                         className="w-full border rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
@@ -256,13 +312,16 @@ export const CalculationTab: React.FC<Props> = ({ processNumber, tables, config,
       <div className="space-y-6">
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 rounded-3xl text-white shadow-xl sticky top-8">
           <h3 className="text-lg font-medium opacity-80 mb-2">Total Estimado Devido</h3>
-          <div className="text-5xl font-extrabold mb-8">{totalDue.toFixed(2)}€</div>
+          <div className="text-5xl font-extrabold mb-8">{totalGlobalValue.toFixed(2)}€</div>
           
           <div className="space-y-4 border-t border-white/20 pt-6">
-            {Object.entries(grandTotals).map(([type, value]) => (
+            {Object.entries(grandTotals).map(([type, data]) => (
               <div key={type} className="flex justify-between items-center">
-                <span className="text-sm opacity-90">{type}</span>
-                <span className="font-bold">{value.toFixed(2)}€</span>
+                <div className="flex flex-col">
+                   <span className="text-sm opacity-90">{type}</span>
+                   <span className="text-[10px] opacity-60">{data.h} horas</span>
+                </div>
+                <span className="font-bold">{data.v.toFixed(2)}€</span>
               </div>
             ))}
           </div>
